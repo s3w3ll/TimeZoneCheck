@@ -183,9 +183,9 @@ h1 {
   background: #ebebf0;
 }
 
-/* header row: taller, transparent, for day labels */
-.tl-header-row .tl-bars {
-  height: 28px;
+/* axis rows: taller, transparent, timezone day/hour labels above and below bars */
+.tl-axis-bar {
+  height: 42px;
   background: transparent;
   overflow: visible;
   border-radius: 0;
@@ -197,19 +197,23 @@ h1 {
   height: 100%;
 }
 
-.day-label {
+.axis-day {
   position: absolute;
-  top: 0;
-  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.68rem;
+  font-size: 0.65rem;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: #666;
+  letter-spacing: 0.05em;
+  color: #555;
+  border-left: 1px solid #d8d8df;
+  overflow: hidden;
+  white-space: nowrap;
 }
+
+.tl-axis-top    .axis-day { top: 0;    height: 22px; }
+.tl-axis-bottom .axis-day { bottom: 0; height: 22px; }
 
 .day-divider {
   position: absolute;
@@ -220,6 +224,28 @@ h1 {
   z-index: 3;
   pointer-events: none;
 }
+
+.hour-gridline {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgba(255,255,255,0.5);
+  z-index: 2;
+  pointer-events: none;
+}
+
+.axis-hour {
+  position: absolute;
+  font-size: 0.6rem;
+  color: #999;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.tl-axis-top    .axis-hour { bottom: 3px; }
+.tl-axis-bottom .axis-hour { top: 3px; }
 
 /* legend */
 .tl-legend {

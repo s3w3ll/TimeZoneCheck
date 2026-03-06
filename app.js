@@ -14,6 +14,13 @@ const COLORS = {
   noOverlapTint: 'rgba(224,48,48,0.15)',
 };
 
+// UTC midnight today (ms) — converts UTC-minute offsets to real Date objects for day-name lookups
+const utcMidnightMs = (() => {
+  const d = new Date();
+  d.setUTCHours(0, 0, 0, 0);
+  return d.getTime();
+})();
+
 // Returns offset in minutes such that: local_minutes = UTC_minutes + offset
 // e.g. New York (UTC-5) → -300, Kolkata (UTC+5:30) → +330
 function getUTCOffsetMinutes(tz) {
@@ -112,7 +119,19 @@ function addDayDividers(barsEl, numDays, totalMinutes) {
   }
 }
 
-function makeBarRow(labelText, labelClass, segments, numDays, totalMinutes) {
+// Adds a subtle vertical gridline at every UTC hour (skipping UTC midnight, which addDayDividers covers).
+function addHourGridlines(barsEl, tlMin, tlMax, totalMinutes) {
+  const firstHour = Math.ceil(tlMin / 60) * 60;
+  for (let utcMin = firstHour; utcMin < tlMax; utcMin += 60) {
+    if (utcMin % 1440 === 0) continue; // day-divider handles UTC midnight
+    const d = document.createElement('div');
+    d.className  = 'hour-gridline';
+    d.style.left = pct(utcMin - tlMin, totalMinutes);
+    barsEl.appendChild(d);
+  }
+}
+
+function makeBarRow(labelText, labelClass, segments, numDays, tlMin, tlMax, totalMinutes) {
   const row  = document.createElement('div');
   row.className = 'tl-row';
 
@@ -126,12 +145,86 @@ function makeBarRow(labelText, labelClass, segments, numDays, totalMinutes) {
 
   segments.forEach(s => bars.appendChild(makeSeg(s.l, s.w, s.c)));
   addDayDividers(bars, numDays, totalMinutes);
+  addHourGridlines(bars, tlMin, tlMax, totalMinutes);
 
   row.appendChild(bars);
   return row;
 }
 
-function renderTimeline(s1, e1, s2, e2, oStart, oEnd, hasOverlap) {
+// Builds a timezone-aware axis row showing local day sections and hour tick labels.
+// isTop=true  → day band at top,    hours at bottom (Home axis, placed above bars)
+// isTop=false → hours at top,       day band at bottom (Away axis, placed below bars)
+function makeAxisRow(labelText, labelClass, tlMin, tlMax, totalMinutes, tz, isTop) {
+  const row = document.createElement('div');
+  row.className = 'tl-row';
+
+  const lbl = document.createElement('div');
+  lbl.className   = `tl-label ${labelClass}`;
+  lbl.textContent = labelText;
+  row.appendChild(lbl);
+
+  const bars = document.createElement('div');
+  bars.className = `tl-bars tl-axis-bar ${isTop ? 'tl-axis-top' : 'tl-axis-bottom'}`;
+
+  const O = getUTCOffsetMinutes(tz);
+  // local_minute = UTC_minute + O  →  local midnight of day k is UTC minute k*1440 - O
+
+  // Fewer hour ticks for wider spans to avoid crowding
+  const spanHours = (tlMax - tlMin) / 60;
+  const hourStep  = spanHours <= 24 ? 2 : spanHours <= 48 ? 4 : 6;
+
+  // Which local days intersect the visible UTC range?
+  const localDayStart = Math.floor((tlMin + O) / 1440);
+  const localDayEnd   = Math.floor((tlMax - 1 + O) / 1440);
+
+  for (let k = localDayStart; k <= localDayEnd; k++) {
+    const dayStartUTC = k * 1440 - O;         // UTC minute of local midnight on day k
+    const dayEndUTC   = (k + 1) * 1440 - O;  // UTC minute of local midnight on day k+1
+
+    const visStart = Math.max(dayStartUTC, tlMin);
+    const visEnd   = Math.min(dayEndUTC,   tlMax);
+    if (visEnd <= visStart) continue;
+
+    // Use a real Date at the midpoint of the visible section to get the correct local day name
+    const midMs  = utcMidnightMs + (visStart + visEnd) / 2 * 60000;
+    const dayName = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz, weekday: 'short',
+    }).format(new Date(midMs));
+
+    // Day section band
+    const dayEl = document.createElement('div');
+    dayEl.className   = 'axis-day';
+    dayEl.textContent = dayName;
+    dayEl.style.left  = pct(visStart - tlMin, totalMinutes);
+    dayEl.style.width = pct(visEnd - visStart, totalMinutes);
+    bars.appendChild(dayEl);
+
+    // Local midnight divider (skip if it falls at or before the left edge)
+    if (dayStartUTC > tlMin && dayStartUTC < tlMax) {
+      const div = document.createElement('div');
+      div.className  = 'day-divider';
+      div.style.left = pct(dayStartUTC - tlMin, totalMinutes);
+      bars.appendChild(div);
+    }
+
+    // Hour tick labels within this local day
+    for (let h = 0; h < 24; h += hourStep) {
+      const hourUTC = dayStartUTC + h * 60;
+      if (hourUTC < tlMin || hourUTC >= tlMax) continue;
+
+      const hourEl = document.createElement('div');
+      hourEl.className   = 'axis-hour';
+      hourEl.textContent = String(h);
+      hourEl.style.left  = pct(hourUTC - tlMin, totalMinutes);
+      bars.appendChild(hourEl);
+    }
+  }
+
+  row.appendChild(bars);
+  return row;
+}
+
+function renderTimeline(s1, e1, s2, e2, oStart, oEnd, hasOverlap, tz1, tz2) {
   const el = document.getElementById('timeline');
   el.innerHTML = '';
 
@@ -145,68 +238,47 @@ function renderTimeline(s1, e1, s2, e2, oStart, oEnd, hasOverlap) {
   const tlMax       = tlMin + numDays * 1440;
   const totalMinutes = numDays * 1440;
 
-  const today   = new Date();
   const wrapper = document.createElement('div');
   wrapper.className = 'tl-wrapper';
 
-  // ── Header row: day labels ──────────────────────────────────────
-  const headerRow = document.createElement('div');
-  headerRow.className = 'tl-row tl-header-row';
+  // ── Top axis: Home timezone ──────────────────────────────────────
+  wrapper.appendChild(makeAxisRow('Home', 'tl-tz1', tlMin, tlMax, totalMinutes, tz1, true));
 
-  const headerLabel = document.createElement('div');
-  headerLabel.className = 'tl-label';
-  headerRow.appendChild(headerLabel);
-
-  const headerBars = document.createElement('div');
-  headerBars.className = 'tl-bars';
-
-  for (let i = 0; i < numDays; i++) {
-    const date = new Date(today);
-    date.setDate(date.getDate() + dayStartIdx + i);
-
-    const dayLbl = document.createElement('div');
-    dayLbl.className   = 'day-label';
-    dayLbl.textContent = DAY_NAMES[date.getDay()];
-    dayLbl.style.left  = pct(i * 1440, totalMinutes);
-    dayLbl.style.width = pct(1440, totalMinutes);
-    headerBars.appendChild(dayLbl);
-  }
-
-  headerRow.appendChild(headerBars);
-  wrapper.appendChild(headerRow);
-
-  // ── TZ1 bar ─────────────────────────────────────────────────────
+  // ── Home bar (TZ1) ───────────────────────────────────────────────
   wrapper.appendChild(makeBarRow(
-    'TZ1', 'tl-tz1',
+    'Home', 'tl-tz1',
     tzSegments(tlMin, tlMax, s1, e1, COLORS.tz1Muted, COLORS.tz1Strong),
-    numDays, totalMinutes
+    numDays, tlMin, tlMax, totalMinutes
   ));
 
-  // ── TZ2 bar ─────────────────────────────────────────────────────
-  wrapper.appendChild(makeBarRow(
-    'TZ2', 'tl-tz2',
-    tzSegments(tlMin, tlMax, s2, e2, COLORS.tz2Muted, COLORS.tz2Strong),
-    numDays, totalMinutes
-  ));
-
-  // ── Overlap bar ─────────────────────────────────────────────────
+  // ── Overlap bar ──────────────────────────────────────────────────
   const oSegs = overlapSegments(tlMin, tlMax, oStart, oEnd, hasOverlap);
   if (!hasOverlap) {
     oSegs.push({ l: '0%', w: '100%', c: COLORS.noOverlapTint });
   }
   wrapper.appendChild(makeBarRow(
-    'Overlap', 'tl-ovr', oSegs, numDays, totalMinutes
+    'Overlap', 'tl-ovr', oSegs, numDays, tlMin, tlMax, totalMinutes
   ));
+
+  // ── Away bar (TZ2) ───────────────────────────────────────────────
+  wrapper.appendChild(makeBarRow(
+    'Away', 'tl-tz2',
+    tzSegments(tlMin, tlMax, s2, e2, COLORS.tz2Muted, COLORS.tz2Strong),
+    numDays, tlMin, tlMax, totalMinutes
+  ));
+
+  // ── Bottom axis: Away timezone ───────────────────────────────────
+  wrapper.appendChild(makeAxisRow('Away', 'tl-tz2', tlMin, tlMax, totalMinutes, tz2, false));
 
   // ── Legend ───────────────────────────────────────────────────────
   const legend = document.createElement('div');
   legend.className = 'tl-legend';
   [
-    { c: COLORS.tz1Strong, label: 'TZ1 business hours' },
-    { c: COLORS.tz1Muted,  label: 'TZ1 other hours'   },
-    { c: COLORS.tz2Strong, label: 'TZ2 business hours' },
-    { c: COLORS.tz2Muted,  label: 'TZ2 other hours'   },
-    { c: COLORS.overlap,   label: 'Overlap'            },
+    { c: COLORS.tz1Strong, label: 'Home business hours' },
+    { c: COLORS.tz1Muted,  label: 'Home other hours'    },
+    { c: COLORS.tz2Strong, label: 'Away business hours' },
+    { c: COLORS.tz2Muted,  label: 'Away other hours'    },
+    { c: COLORS.overlap,   label: 'Overlap'             },
   ].forEach(({ c, label }) => {
     const item = document.createElement('div');
     item.className = 'legend-item';
@@ -264,7 +336,7 @@ function calculate() {
     summary.className   = 'overlap-summary no-overlap';
   }
 
-  renderTimeline(s1, e1, s2, e2, oStart, oEnd, hasOverlap);
+  renderTimeline(s1, e1, s2, e2, oStart, oEnd, hasOverlap, tz1, tz2);
   document.getElementById('results').classList.remove('hidden');
 }
 
