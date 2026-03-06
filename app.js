@@ -230,6 +230,11 @@ function calculate() {
   const start2 = document.getElementById('start2').value;
   const end2   = document.getElementById('end2').value;
 
+  if (!start1 || !end1 || !start2 || !end2) {
+    alert('Please fill in all start and end times.');
+    return;
+  }
+
   let s1 = localToUTC(start1, tz1);
   let e1 = localToUTC(end1,   tz1);
   let s2 = localToUTC(start2, tz2);
