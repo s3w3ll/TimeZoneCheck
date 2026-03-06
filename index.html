@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Time Zone Overlap Checker</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <h1>Time Zone Overlap Checker</h1>
+
+    <div class="panels">
+      <div class="panel panel-tz1">
+        <h2>Timezone 1</h2>
+        <div class="field">
+          <label for="tz1">Timezone</label>
+          <select id="tz1"></select>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="start1">Start</label>
+            <input type="time" id="start1">
+          </div>
+          <div class="field">
+            <label for="end1">End</label>
+            <input type="time" id="end1">
+          </div>
+        </div>
+      </div>
+
+      <div class="panel panel-tz2">
+        <h2>Timezone 2</h2>
+        <div class="field">
+          <label for="tz2">Timezone</label>
+          <select id="tz2"></select>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="start2">Start</label>
+            <input type="time" id="start2">
+          </div>
+          <div class="field">
+            <label for="end2">End</label>
+            <input type="time" id="end2">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button id="calculate">Calculate Overlap</button>
+    </div>
+
+    <div id="results" class="results hidden">
+      <div id="overlap-summary" class="overlap-summary"></div>
+      <div id="timeline"></div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
