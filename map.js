@@ -57,6 +57,7 @@ let _path       = null;
 function getProjection() {
   if (_projection) return _projection;
   _projection = d3.geoNaturalEarth1()
+    .rotate([-15, 0])   // centre at 15°E → UTC-11 at left edge, UTC+13 at right
     .fitExtent([[0, 0], [MAP_W, MAP_H]], { type: 'Sphere' });
   _path = d3.geoPath(_projection);
   return _projection;
@@ -268,13 +269,11 @@ function onMapClick(evt) {
     syncDropdown('tz1', tz);
     updateTZTag('tz1-tag', tz);
     refreshPins();
-    updatePrompt();
   } else {
     window.mapState.awayTZ = tz;
     syncDropdown('tz2', tz);
     updateTZTag('tz2-tag', tz);
     refreshPins();
-    updatePrompt();
     calculate();
   }
 }
@@ -313,20 +312,36 @@ function initMapMode() {   // eslint-disable-line no-unused-vars
   const container = document.getElementById('map-container');
   if (!container) return;
 
-  // Reset state
-  window.mapState = { phase: 'home', homeTZ: null, awayTZ: null };
+  // Auto-detect browser timezone and pre-set as home
+  const browserTZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+  // Reset state with home pre-filled
+  window.mapState = { phase: 'away', homeTZ: browserTZ, awayTZ: null };
 
   // Build inner HTML (sync — country paths filled in async below)
   container.innerHTML = `
-    <div id="map-prompt" class="map-prompt map-prompt-home">
-      Click your home timezone on the map
+    <div class="map-prompt-row">
+      <button id="map-change-home" class="map-change-home-btn" type="button">Change Home</button>
     </div>
     ${createMapSVG()}
     <div id="map-tz-info" class="map-tz-info" aria-live="polite"></div>
   `;
 
-  updateTZTag('tz1-tag', null);
+  // Sync home TZ to dropdown, tag, and pin
+  syncDropdown('tz1', browserTZ);
+  updateTZTag('tz1-tag', browserTZ);
   updateTZTag('tz2-tag', null);
+  refreshPins();
+
+  document.getElementById('map-change-home').addEventListener('click', () => {
+    window.mapState.phase  = 'home';
+    window.mapState.homeTZ = null;
+    window.mapState.awayTZ = null;
+    updateTZTag('tz1-tag', null);
+    updateTZTag('tz2-tag', null);
+    refreshPins();
+    document.getElementById('results').classList.add('hidden');
+  });
 
   // Load country shapes (async — does not block map interactivity)
   loadAndRenderCountries();

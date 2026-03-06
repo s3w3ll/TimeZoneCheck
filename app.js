@@ -6,12 +6,12 @@ const DEFAULT_END   = '17:00';
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 const COLORS = {
-  tz1Muted:  '#f4a0a0',
-  tz1Strong: '#e03030',
-  tz2Muted:  '#90b4f0',
-  tz2Strong: '#2060e0',
+  tz1Muted:  '#90b4f0',
+  tz1Strong: '#2060e0',
+  tz2Muted:  '#f4a0a0',
+  tz2Strong: '#e03030',
   overlap:   '#9040c0',
-  noOverlapTint: 'rgba(224,48,48,0.15)',
+  noOverlapTint: 'rgba(32,96,224,0.15)',
 };
 
 // UTC midnight today (ms) — converts UTC-minute offsets to real Date objects for day-name lookups

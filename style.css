@@ -1,10 +1,10 @@
 :root {
-  --tz1-bg:     #fff0f0;
-  --tz1-muted:  #f4a0a0;
-  --tz1-strong: #e03030;
-  --tz2-bg:     #f0f4ff;
-  --tz2-muted:  #90b4f0;
-  --tz2-strong: #2060e0;
+  --tz1-bg:     #f0f4ff;
+  --tz1-muted:  #90b4f0;
+  --tz1-strong: #2060e0;
+  --tz2-bg:     #fff0f0;
+  --tz2-muted:  #f4a0a0;
+  --tz2-strong: #e03030;
   --overlap:    #9040c0;
   --no-overlap: #e03030;
   --radius:     10px;
@@ -308,28 +308,30 @@ h1 {
   margin-bottom: 1.25rem;
 }
 
-/* ── Map prompt ──────────────────────────────────────────────────────────── */
+/* ── Change Home button row ───────────────────────────────────────────────── */
 
-.map-prompt {
-  text-align: center;
-  font-size: 0.875rem;
-  font-weight: 600;
-  padding: 0.5rem 1rem;
-  border-radius: 8px;
-  margin-bottom: 0.75rem;
-  line-height: 1.4;
+.map-prompt-row {
+  display: flex;
+  justify-content: flex-start;
+  margin-bottom: 0.5rem;
 }
 
-.map-prompt-home {
+.map-change-home-btn {
+  padding: 0.35rem 0.85rem;
+  border-radius: 7px;
+  border: 1.5px solid var(--tz1-muted);
   background: var(--tz1-bg);
   color: var(--tz1-strong);
-  border: 1.5px solid var(--tz1-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
 }
 
-.map-prompt-away {
-  background: var(--tz2-bg);
-  color: var(--tz2-strong);
-  border: 1.5px solid var(--tz2-muted);
+.map-change-home-btn:hover {
+  background: var(--tz1-muted);
+  color: #fff;
 }
 
 /* ── SVG map elements ────────────────────────────────────────────────────── */

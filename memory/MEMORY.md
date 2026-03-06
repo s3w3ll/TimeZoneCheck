@@ -42,13 +42,19 @@ Top-level `function` declarations are automatically on `window`, so `map.js` can
 - Auto-recalculate in map mode: `change` listeners on all 4 time inputs, only fires if `mapState.awayTZ` is set.
 
 ### World map (map.js)
-- Pure SVG, equirectangular projection: `x = (lon+180)/360 * 900`, `y = (90-lat)/180 * 450`.
-- Simplified land polygons (~18 landmasses) hardcoded as `[lon, lat]` arrays — no external map data.
+- D3 Natural Earth projection (`d3.geoNaturalEarth1().fitExtent(...)`) via `d3@7` CDN UMD bundle.
+- Country outlines fetched async from `world-atlas@2/countries-110m.json` (topojson-client@3).
+  - `topojson.feature()` for land fill, `topojson.mesh()` for internal borders.
+- Graticule: `d3.geoGraticule().step([15,15])` for curved 15° grid lines.
+- Click-to-longitude via `projection.invert([x,y])` — handles curved meridians correctly.
+- Hover line: curved meridian path drawn via `geoPath`.
 - Timezone detection: longitude → nearest 15-min UTC offset → `CANONICAL_TZ` Map → fallback nearest-match scan.
-- `_tzCache` (Map: offsetMins → tz name) is built lazily on first hover via `requestIdleCallback`.
-- Two-phase click: phase `'home'` sets `tz1`, phase `'away'` sets `tz2` + triggers `calculate()`.
-- Pins placed at approximate UTC-offset longitude (mid-latitude 35°N).
-- Hover shows crosshair line + live timezone name/offset in `#map-tz-info`.
+- `_tzCache` (Map: offsetMins → tz name) is built lazily via `requestIdleCallback`.
+- On `initMapMode()`: browser TZ auto-detected (`Intl.DateTimeFormat().resolvedOptions().timeZone`)
+  and pre-set as home TZ; phase starts at `'away'` — user only needs one click.
+- "Change Home" button (in map container) resets phase to `'home'` for reselection.
+- Pins placed at approximate UTC-offset longitude via `projection([lon, 35])`.
+- Note: `d3-geo@3` is ESM-only (no UMD) — must use full `d3@7` bundle.
 
 ## CSS Conventions
 - CSS custom properties on `:root`: `--tz1-bg/muted/strong`, `--tz2-bg/muted/strong`, `--overlap`, `--radius`.
@@ -73,5 +79,5 @@ COLORS = { tz1Muted, tz1Strong, tz2Muted, tz2Strong, overlap, noOverlapTint }
 ## Patterns to Follow
 - Keep everything in the three main files — avoid new files unless there's a clear module boundary.
 - New rendering features go in `app.js`; map-specific code stays in `map.js`.
-- Avoid CDN dependencies — the app must work offline/self-contained.
+- CDN deps in use: `d3@7` (UMD) + `topojson-client@3` + `world-atlas@2` (JSON fetch). App requires internet for map; form/dropdown mode is self-contained.
 - Use `Intl` APIs for all timezone/date work rather than manual tables.
