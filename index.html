@@ -10,13 +10,22 @@
   <div class="container">
     <h1>Time Zone Overlap Checker</h1>
 
-    <div class="panels">
+    <!-- Mode toggle -->
+    <div class="mode-toggle" role="group" aria-label="Input mode">
+      <button id="mode-form" class="mode-btn active" type="button">Dropdowns</button>
+      <button id="mode-map"  class="mode-btn"        type="button">World Map</button>
+    </div>
+
+    <div class="panels" id="form-panels">
+      <!-- Home panel -->
       <div class="panel panel-tz1">
         <h2>Home Timezone</h2>
-        <div class="field">
+        <div class="field tz-field">
           <label for="tz1">Timezone</label>
           <select id="tz1" name="tz1"></select>
         </div>
+        <!-- Shown only in map mode -->
+        <div class="map-tz-tag hidden" id="tz1-tag">Click map to select</div>
         <div class="field-row">
           <div class="field">
             <label for="start1">Start</label>
@@ -29,12 +38,15 @@
         </div>
       </div>
 
+      <!-- Away panel -->
       <div class="panel panel-tz2">
         <h2>Away Timezone</h2>
-        <div class="field">
+        <div class="field tz-field">
           <label for="tz2">Timezone</label>
           <select id="tz2" name="tz2"></select>
         </div>
+        <!-- Shown only in map mode -->
+        <div class="map-tz-tag hidden" id="tz2-tag">Click map to select</div>
         <div class="field-row">
           <div class="field">
             <label for="start2">Start</label>
@@ -48,7 +60,11 @@
       </div>
     </div>
 
-    <div class="actions">
+    <!-- Map container (hidden in form mode) -->
+    <div id="map-container" class="map-container hidden"></div>
+
+    <!-- Calculate button (hidden in map mode) -->
+    <div class="actions" id="form-actions">
       <button id="calculate" type="button">Calculate Overlap</button>
     </div>
 
@@ -59,5 +75,6 @@
   </div>
 
   <script src="app.js"></script>
+  <script src="map.js"></script>
 </body>
 </html>

@@ -340,7 +340,44 @@ function calculate() {
   document.getElementById('results').classList.remove('hidden');
 }
 
+// ── Mode toggle ───────────────────────────────────────────────────────────────
+
+let _timeChangeHandler = null;
+
+function setMode(mode) {
+  const isMap = mode === 'map';
+
+  // Timezone field: hide dropdown row in map mode, show tz-tag instead
+  document.querySelectorAll('.tz-field').forEach(el => el.classList.toggle('hidden', isMap));
+  document.querySelectorAll('.map-tz-tag').forEach(el => el.classList.toggle('hidden', !isMap));
+
+  // Show / hide map container and calculate button
+  document.getElementById('map-container').classList.toggle('hidden', !isMap);
+  document.getElementById('form-actions').classList.toggle('hidden', isMap);
+
+  // Update toggle button state
+  document.getElementById('mode-form').classList.toggle('active', !isMap);
+  document.getElementById('mode-map').classList.toggle('active', isMap);
+
+  // Manage auto-recalculate listener so time-input changes update the timeline in map mode
+  const timeIds = ['start1', 'end1', 'start2', 'end2'];
+  if (_timeChangeHandler) {
+    timeIds.forEach(id => document.getElementById(id).removeEventListener('change', _timeChangeHandler));
+    _timeChangeHandler = null;
+  }
+  if (isMap) {
+    _timeChangeHandler = () => {
+      if (window.mapState && window.mapState.awayTZ) calculate();
+    };
+    timeIds.forEach(id => document.getElementById(id).addEventListener('change', _timeChangeHandler));
+    // initMapMode is defined in map.js (loaded after this file)
+    if (typeof initMapMode === 'function') initMapMode();
+  }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   populateDropdowns();
   document.getElementById('calculate').addEventListener('click', calculate);
+  document.getElementById('mode-form').addEventListener('click', () => setMode('form'));
+  document.getElementById('mode-map').addEventListener('click',  () => setMode('map'));
 });
