@@ -11,7 +11,7 @@ const COLORS = {
   tz2Muted:  '#90b4f0',
   tz2Strong: '#2060e0',
   overlap:   '#9040c0',
-  noOverlap: '#e03030',
+  noOverlapTint: 'rgba(224,48,48,0.15)',
 };
 
 // Returns offset in minutes such that: local_minutes = UTC_minutes + offset
@@ -192,7 +192,7 @@ function renderTimeline(s1, e1, s2, e2, oStart, oEnd, hasOverlap) {
   // ── Overlap bar ─────────────────────────────────────────────────
   const oSegs = overlapSegments(tlMin, tlMax, oStart, oEnd, hasOverlap);
   if (!hasOverlap) {
-    oSegs.push({ l: '0%', w: '100%', c: 'rgba(224,48,48,0.15)' });
+    oSegs.push({ l: '0%', w: '100%', c: COLORS.noOverlapTint });
   }
   wrapper.appendChild(makeBarRow(
     'Overlap', 'tl-ovr', oSegs, numDays, totalMinutes
