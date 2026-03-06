@@ -117,8 +117,9 @@ h1 {
   transition: background 0.15s, transform 0.1s;
 }
 
-#calculate:hover  { background: #3a3a3c; }
-#calculate:active { transform: scale(0.98); }
+#calculate:hover        { background: #3a3a3c; }
+#calculate:active       { transform: scale(0.98); }
+#calculate:focus-visible { outline: 3px solid #2060e0; outline-offset: 2px; }
 
 /* ── Results ────────────────────────────────────────────────────── */
 
