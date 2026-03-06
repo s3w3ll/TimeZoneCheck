@@ -3,63 +3,11 @@
 // ══════════════════════════════════════════════════════════════════════════════
 //  World-map timezone picker
 //  Loaded after app.js — uses getUTCOffsetMinutes() and calculate() from app.js
+//  Uses d3-geo (global `d3`) and topojson-client (global `topojson`) from CDN.
 // ══════════════════════════════════════════════════════════════════════════════
 
 const MAP_W = 900;
 const MAP_H = 450;
-
-// ── Simplified land polygons ──────────────────────────────────────────────────
-// Each entry is an array of [lon, lat] pairs describing one closed landmass.
-// Shapes are deliberately simplified to keep code small while staying recognisable.
-const LAND_POLYS = [
-  // North America + Central America (single clockwise polygon)
-  [[-168,71],[-155,73],[-140,70],[-100,73],[-85,72],[-65,68],
-   [-52,47],[-65,44],[-75,44],[-80,25],[-90,30],[-97,26],
-   [-97,18],[-90,15],[-80,8],[-84,9],[-90,16],[-105,25],
-   [-118,32],[-125,48],[-135,58],[-145,62]],
-  // South America
-  [[-82,12],[-60,12],[-35,-5],[-35,-10],[-50,-35],
-   [-68,-55],[-75,-40],[-80,-8]],
-  // Europe
-  [[-12,36],[30,36],[42,42],[38,60],[25,72],[10,72],[0,65],[-10,55]],
-  // Africa
-  [[-18,38],[55,12],[45,-10],[35,-35],[10,-35],[-18,5]],
-  // Asia — main body (wraps to +180 at the antimeridian)
-  [[26,72],[180,72],[180,50],[140,45],[125,22],[110,5],
-   [95,5],[80,8],[65,22],[50,12],[40,12],[38,38],[28,42],[26,42]],
-  // Arabian Peninsula
-  [[36,30],[58,22],[55,12],[40,12]],
-  // Indian Subcontinent
-  [[65,25],[90,25],[80,8],[68,8]],
-  // SE Asia mainland + Malay Peninsula
-  [[98,22],[108,18],[104,2],[100,5]],
-  // Australia
-  [[114,-22],[130,-12],[140,-15],[152,-22],[152,-40],[130,-40],[114,-40]],
-  // Greenland
-  [[-45,85],[-20,85],[-20,75],[-35,70],[-55,70],[-55,80]],
-  // UK
-  [[-6,50],[2,52],[2,58],[-6,58]],
-  // Japan (Honshu + Kyushu)
-  [[130,32],[135,34],[141,40],[142,45],[132,42]],
-  // New Zealand
-  [[172,-34],[175,-34],[175,-46],[172,-46]],
-  // Iceland
-  [[-25,63],[-12,63],[-12,66],[-25,66]],
-  // Borneo
-  [[108,-4],[120,-4],[120,6],[108,6]],
-  // Sumatra
-  [[95,5],[108,5],[108,-6],[95,-6]],
-  // Philippines (approximate)
-  [[116,8],[122,8],[122,20],[116,20]],
-  // Madagascar
-  [[44,-12],[50,-12],[50,-26],[44,-26]],
-  // New Guinea
-  [[132,-2],[150,-6],[150,-8],[132,-8]],
-  // Sri Lanka
-  [[80,6],[82,6],[82,10],[80,10]],
-  // Cuba
-  [[-85,22],[-74,22],[-74,20],[-85,20]],
-];
 
 // ── Canonical timezone per UTC-offset ─────────────────────────────────────────
 // Key = offset in minutes. Used to snap map clicks to well-known city timezones.
@@ -101,26 +49,42 @@ const CANONICAL_TZ = new Map([
   [ 780, 'Pacific/Apia'],
 ]);
 
+// ── D3 projection (Natural Earth) ─────────────────────────────────────────────
+// Initialised once; reused for all coordinate conversions and path drawing.
+let _projection = null;
+let _path       = null;
+
+function getProjection() {
+  if (_projection) return _projection;
+  _projection = d3.geoNaturalEarth1()
+    .fitExtent([[0, 0], [MAP_W, MAP_H]], { type: 'Sphere' });
+  _path = d3.geoPath(_projection);
+  return _projection;
+}
+
+function getPath() {
+  getProjection();
+  return _path;
+}
+
 // ── Coordinate helpers ────────────────────────────────────────────────────────
 
-function ll2xy(lon, lat) {
+function clientToSVGPoint(evt, svgEl) {
+  const r = svgEl.getBoundingClientRect();
   return [
-    ((lon + 180) / 360) * MAP_W,
-    ((90  - lat) / 180) * MAP_H,
+    (evt.clientX - r.left) * (MAP_W / r.width),
+    (evt.clientY - r.top)  * (MAP_H / r.height),
   ];
 }
 
-function mapXToLon(mx) {
-  return (mx / MAP_W) * 360 - 180;
-}
-
-function clientToSVGX(evt, svgEl) {
-  const r = svgEl.getBoundingClientRect();
-  return (evt.clientX - r.left) * (MAP_W / r.width);
+// Longitude of SVG x-coordinate via projection inverse (handles curved meridians).
+function svgPointToLon(pt) {
+  const proj = getProjection();
+  const geo  = proj.invert(pt);
+  return geo ? geo[0] : null;
 }
 
 // ── Timezone lookup ───────────────────────────────────────────────────────────
-// Lazy cache: offset-minutes → best matching Intl timezone name
 let _tzCache = null;
 
 function buildTZCache() {
@@ -128,7 +92,6 @@ function buildTZCache() {
   _tzCache = new Map();
   for (const tz of Intl.supportedValuesOf('timeZone')) {
     const mins = getUTCOffsetMinutes(tz);
-    // Store first match; overwrite with canonical if available
     if (!_tzCache.has(mins) || CANONICAL_TZ.get(mins) === tz) {
       _tzCache.set(mins, tz);
     }
@@ -137,15 +100,12 @@ function buildTZCache() {
 }
 
 function lonToOffsetMins(lon) {
-  // Round to nearest 15-minute UTC offset
   return Math.round((lon / 15) * 4) / 4 * 60;
 }
 
 function findTimezoneForLon(lon) {
   const target = lonToOffsetMins(lon);
   if (CANONICAL_TZ.has(target)) return CANONICAL_TZ.get(target);
-
-  // Nearest-match fallback
   const cache = buildTZCache();
   let best = 'UTC', bestDelta = Infinity;
   for (const [mins, tz] of cache) {
@@ -166,31 +126,13 @@ function fmtOffset(tz) {
 
 // ── SVG construction ──────────────────────────────────────────────────────────
 
-function poly2d(pts) {
-  return pts.map(([lon, lat], i) => {
-    const [x, y] = ll2xy(lon, lat);
-    return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
-  }).join('') + 'Z';
-}
-
-function buildGridlinesSVG() {
-  const out = [];
-  for (let lon = -165; lon <= 180; lon += 15) {
-    const x   = ((lon + 180) / 360) * MAP_W;
-    const hr  = lon / 15;
-    const lbl = hr > 0 ? `+${hr}` : String(hr);
-    out.push(
-      `<line x1="${x.toFixed(1)}" y1="0" x2="${x.toFixed(1)}" y2="${MAP_H}" class="map-grid"/>`,
-      `<text x="${x.toFixed(1)}" y="${MAP_H - 5}" class="map-grid-label">${lbl}</text>`,
-    );
-  }
-  // Equator
-  out.push(`<line x1="0" y1="${MAP_H / 2}" x2="${MAP_W}" y2="${MAP_H / 2}" class="map-equator"/>`);
-  return out.join('');
-}
-
 function createMapSVG() {
-  const land = LAND_POLYS.map(p => `<path d="${poly2d(p)}" class="map-land"/>`).join('');
+  const proj = getProjection();
+  const graticule = d3.geoGraticule().step([15, 15])();
+  const sphere     = { type: 'Sphere' };
+  const gratPath   = getPath()(graticule) || '';
+  const spherePath = getPath()(sphere)    || '';
+
   return `
 <svg id="world-map-svg"
   viewBox="0 0 ${MAP_W} ${MAP_H}"
@@ -198,14 +140,39 @@ function createMapSVG() {
   role="img"
   aria-label="World map for timezone selection"
   style="width:100%;height:auto;display:block;cursor:crosshair;border-radius:6px;">
-  <rect width="${MAP_W}" height="${MAP_H}" class="map-ocean"/>
-  ${buildGridlinesSVG()}
-  ${land}
-  <g id="map-pins" aria-hidden="true"></g>
-  <line id="map-hover-line" class="map-hover-line"
-    x1="0" y1="0" x2="0" y2="${MAP_H}" opacity="0"/>
+  <path class="map-sphere" d="${spherePath}"/>
+  <path class="map-graticule" d="${gratPath}"/>
+  <g id="map-land"    aria-hidden="true"></g>
+  <g id="map-borders" aria-hidden="true"></g>
+  <g id="map-pins"    aria-hidden="true"></g>
+  <path id="map-hover-line" class="map-hover-line" d="" opacity="0"/>
+  <path class="map-sphere-outline" d="${spherePath}"/>
   <rect width="${MAP_W}" height="${MAP_H}" fill="transparent" id="map-overlay"/>
 </svg>`;
+}
+
+// Async: fetch world-atlas TopoJSON and paint countries + borders into the SVG.
+async function loadAndRenderCountries() {
+  const url = 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json';
+  let topo;
+  try {
+    const res = await fetch(url);
+    topo = await res.json();
+  } catch (e) {
+    console.warn('TimeZoneCheck: could not load world-atlas:', e);
+    return;
+  }
+
+  const land    = topojson.feature(topo, topo.objects.land);
+  const borders = topojson.mesh(topo, topo.objects.countries, (a, b) => a !== b);
+
+  const landEl    = document.getElementById('map-land');
+  const bordersEl = document.getElementById('map-borders');
+  if (!landEl || !bordersEl) return;
+
+  const p = getPath();
+  landEl.innerHTML    = `<path class="map-land" d="${p(land) || ''}"/>`;
+  bordersEl.innerHTML = `<path class="map-borders" d="${p(borders) || ''}"/>`;
 }
 
 // ── Pin rendering ─────────────────────────────────────────────────────────────
@@ -213,7 +180,8 @@ function createMapSVG() {
 function pinSVG(tz, cls, label) {
   const offsetMins = getUTCOffsetMinutes(tz);
   const approxLon  = (offsetMins / 60) * 15;
-  const [px, py]   = ll2xy(approxLon, 35);
+  const proj       = getProjection();
+  const [px, py]   = proj([approxLon, 35]) || [MAP_W / 2, MAP_H / 2];
   const cx = Math.max(14, Math.min(MAP_W - 14, px));
   const cy = Math.max(14, Math.min(MAP_H - 25, py));
   const stemY2 = Math.min(cy + 48, MAP_H - 4);
@@ -237,6 +205,16 @@ function refreshPins() {
     el.insertAdjacentHTML('beforeend', pinSVG(window.mapState.awayTZ, 'pin-away', 'Away'));
 }
 
+// ── Hover meridian ────────────────────────────────────────────────────────────
+// Draw a curved meridian at the hovered longitude using the D3 path generator.
+function meridianPath(lon) {
+  const line = { type: 'LineString', coordinates: [] };
+  for (let lat = 90; lat >= -90; lat -= 2) {
+    line.coordinates.push([lon, lat]);
+  }
+  return getPath()(line) || '';
+}
+
 // ── State & UI helpers ────────────────────────────────────────────────────────
 
 window.mapState = { phase: 'home', homeTZ: null, awayTZ: null };
@@ -257,8 +235,7 @@ function updateTZTag(id, tz) {
 function updatePrompt() {
   const el = document.getElementById('map-prompt');
   if (!el) return;
-  const { phase, homeTZ } = window.mapState;
-  const { awayTZ } = window.mapState;
+  const { phase, homeTZ, awayTZ } = window.mapState;
   if (phase === 'home') {
     el.className   = 'map-prompt map-prompt-home';
     el.textContent = 'Click your home timezone on the map';
@@ -280,8 +257,10 @@ function updatePrompt() {
 
 function onMapClick(evt) {
   const svg = document.getElementById('world-map-svg');
-  const mx  = clientToSVGX(evt, svg);
-  const tz  = findTimezoneForLon(mapXToLon(mx));
+  const pt  = clientToSVGPoint(evt, svg);
+  const lon = svgPointToLon(pt);
+  if (lon === null) return;           // click outside sphere
+  const tz = findTimezoneForLon(lon);
 
   if (window.mapState.phase === 'home') {
     window.mapState.homeTZ = tz;
@@ -296,22 +275,27 @@ function onMapClick(evt) {
     updateTZTag('tz2-tag', tz);
     refreshPins();
     updatePrompt();
-    calculate();   // auto-recalculate (from app.js)
+    calculate();
   }
 }
 
 function onMapHover(evt) {
   const svg = document.getElementById('world-map-svg');
-  const mx  = clientToSVGX(evt, svg);
-  const tz  = findTimezoneForLon(mapXToLon(mx));
+  const pt  = clientToSVGPoint(evt, svg);
+  const lon = svgPointToLon(pt);
 
+  if (lon === null) {
+    onMapLeave();
+    return;
+  }
+
+  const tz = findTimezoneForLon(lon);
   const info = document.getElementById('map-tz-info');
   if (info) info.textContent = `${tz.replace(/_/g, ' ')}  ${fmtOffset(tz)}`;
 
   const line = document.getElementById('map-hover-line');
   if (line) {
-    line.setAttribute('x1', mx.toFixed(1));
-    line.setAttribute('x2', mx.toFixed(1));
+    line.setAttribute('d', meridianPath(lon));
     line.setAttribute('opacity', '1');
   }
 }
@@ -332,7 +316,7 @@ function initMapMode() {   // eslint-disable-line no-unused-vars
   // Reset state
   window.mapState = { phase: 'home', homeTZ: null, awayTZ: null };
 
-  // Build inner HTML
+  // Build inner HTML (sync — country paths filled in async below)
   container.innerHTML = `
     <div id="map-prompt" class="map-prompt map-prompt-home">
       Click your home timezone on the map
@@ -344,7 +328,10 @@ function initMapMode() {   // eslint-disable-line no-unused-vars
   updateTZTag('tz1-tag', null);
   updateTZTag('tz2-tag', null);
 
-  // Pre-warm timezone cache in idle time to avoid first-click lag
+  // Load country shapes (async — does not block map interactivity)
+  loadAndRenderCountries();
+
+  // Pre-warm TZ cache during idle time
   if (typeof requestIdleCallback === 'function') {
     requestIdleCallback(buildTZCache);
   } else {
