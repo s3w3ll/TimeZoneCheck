@@ -295,8 +295,8 @@ h1 {
   align-items: center;
 }
 
-.panel-tz1 .map-tz-tag { color: var(--tz1-strong); background: rgba(224,48,48,0.08); }
-.panel-tz2 .map-tz-tag { color: var(--tz2-strong); background: rgba(32,96,224,0.08); }
+.panel-tz1 .map-tz-tag { color: var(--tz1-strong); background: rgba(32,96,224,0.08); }
+.panel-tz2 .map-tz-tag { color: var(--tz2-strong); background: rgba(224,48,48,0.08); }
 
 /* ── Map container ───────────────────────────────────────────────────────── */
 
@@ -306,6 +306,7 @@ h1 {
   padding: 1rem 1rem 0.75rem;
   box-shadow: 0 1px 6px rgba(0,0,0,0.08);
   margin-bottom: 1.25rem;
+  position: relative;   /* tooltip positioned inside here */
 }
 
 /* ── Change Home button row ───────────────────────────────────────────────── */
@@ -336,60 +337,57 @@ h1 {
 
 /* ── SVG map elements ────────────────────────────────────────────────────── */
 
-/* Sphere background fill (ocean) */
+/* Ocean background */
 .map-sphere         { fill: #c8dff4; }
 
-/* Sphere outline — drawn on top to clip stray paths at the edge */
+/* Sphere border — clips stray paths at projection edge */
 .map-sphere-outline { fill: none; stroke: #7aafd4; stroke-width: 1; }
 
-/* Country land fill */
-.map-land           { fill: #e0d8b0; }
+/* Subtle 15° grid */
+.map-graticule      { fill: none; stroke: rgba(255,255,255,0.28); stroke-width: 0.5; }
 
-/* Internal country borders (topojson mesh) */
-.map-borders        { fill: none; stroke: #b0a060; stroke-width: 0.5; }
+/* ── Timezone polygons ───────────────────────────────────────────────────── */
 
-/* D3 graticule (15° grid lines) */
-.map-graticule      { fill: none; stroke: rgba(255,255,255,0.3); stroke-width: 0.5; }
-
-/* Curved meridian hover indicator */
-.map-hover-line {
-  fill: none;
-  stroke: rgba(80,80,80,0.5);
-  stroke-width: 1.2;
-  stroke-dasharray: 4,3;
-  pointer-events: none;
+/* One <path> per timezone; fill set inline via JS (tzColorPale / tzColorHover) */
+.tz-polygon {
+  stroke: rgba(255,255,255,0.45);
+  stroke-width: 0.35;
+  cursor: pointer;
+  transition: fill 0.12s ease;
 }
 
-/* ── Pins ────────────────────────────────────────────────────────────────── */
+/* ── Floating tooltip ────────────────────────────────────────────────────── */
 
-.pin-dot  { stroke: #fff; stroke-width: 2; }
-.pin-stem { stroke-width: 1.5; stroke-dasharray: 3,3; opacity: 0.65; }
-
-.pin-label {
-  font-size: 9px;
-  font-weight: 700;
-  text-anchor: middle;
+.map-tooltip {
+  position: absolute;
+  background: rgba(14, 14, 22, 0.88);
+  color: #fff;
+  border-radius: 7px;
+  padding: 6px 11px 7px;
+  font-size: 0.74rem;
   pointer-events: none;
-  user-select: none;
+  white-space: nowrap;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: 1px solid rgba(255,255,255,0.12);
+  box-shadow: 0 3px 10px rgba(0,0,0,0.35);
+  opacity: 0;
+  transition: opacity 0.1s;
+  z-index: 20;
 }
 
-.pin-home .pin-dot   { fill: var(--tz1-strong); }
-.pin-home .pin-stem  { stroke: var(--tz1-strong); }
-.pin-home .pin-label { fill: var(--tz1-strong); }
+.map-tooltip.visible  { opacity: 1; }
 
-.pin-away .pin-dot   { fill: var(--tz2-strong); }
-.pin-away .pin-stem  { stroke: var(--tz2-strong); }
-.pin-away .pin-label { fill: var(--tz2-strong); }
+.map-tooltip strong {
+  font-weight: 600;
+  font-size: 0.76rem;
+  letter-spacing: 0.01em;
+}
 
-/* ── Timezone hover info beneath map ────────────────────────────────────── */
-
-.map-tz-info {
-  text-align: center;
-  font-size: 0.72rem;
-  color: #888;
-  min-height: 1.3em;
-  margin-top: 0.4rem;
-  letter-spacing: 0.02em;
+.map-tooltip span {
+  opacity: 0.68;
+  font-size: 0.68rem;
 }
 
 /* ── legend */

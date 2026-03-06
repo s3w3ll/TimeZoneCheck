@@ -42,18 +42,29 @@ Top-level `function` declarations are automatically on `window`, so `map.js` can
 - Auto-recalculate in map mode: `change` listeners on all 4 time inputs, only fires if `mapState.awayTZ` is set.
 
 ### World map (map.js)
-- D3 Natural Earth projection (`d3.geoNaturalEarth1().fitExtent(...)`) via `d3@7` CDN UMD bundle.
-- Country outlines fetched async from `world-atlas@2/countries-110m.json` (topojson-client@3).
-  - `topojson.feature()` for land fill, `topojson.mesh()` for internal borders.
-- Graticule: `d3.geoGraticule().step([15,15])` for curved 15° grid lines.
-- Click-to-longitude via `projection.invert([x,y])` — handles curved meridians correctly.
-- Hover line: curved meridian path drawn via `geoPath`.
-- Timezone detection: longitude → nearest 15-min UTC offset → `CANONICAL_TZ` Map → fallback nearest-match scan.
-- `_tzCache` (Map: offsetMins → tz name) is built lazily via `requestIdleCallback`.
-- On `initMapMode()`: browser TZ auto-detected (`Intl.DateTimeFormat().resolvedOptions().timeZone`)
-  and pre-set as home TZ; phase starts at `'away'` — user only needs one click.
-- "Change Home" button (in map container) resets phase to `'home'` for reselection.
-- Pins placed at approximate UTC-offset longitude via `projection([lon, 35])`.
+- D3 Natural Earth projection (`d3.geoNaturalEarth1().rotate([-15,0]).fitExtent(...)`) via `d3@7` CDN UMD bundle.
+  - Rotated -15° so 15°E is centred: UTC-11 at left edge, UTC+13 at right.
+  - `.digits(0)` on `geoPath` snaps to integers — ~40% smaller SVG paths, free simplification.
+- **Data source**: `timezone-map.json` — local TopoJSON (~216 KB) derived from timezone-boundary-builder 2025c.
+  - Source file: `timezones-now.geojson.zip` → extracted `combined-now.json` (75 MB GeoJSON, 64 merged regions).
+  - Simplified with `npx mapshaper -simplify 1% keep-shapes -o format=topojson`.
+  - 64 features = major timezone regions; each is a MultiPolygon combining all territories sharing that tzid.
+  - Object key in TopoJSON: `'combined-now'`; property: `tzid`.
+  - `topojson-client@3` (CDN) used to decode; object key grabbed dynamically via `Object.keys(topo.objects)[0]`.
+- **Rendering**: One `<path class="tz-polygon" data-tz="…">` per timezone feature.
+  - Colour = `hsl(hue, 22%, 88%)` (pale) where hue maps UTC offset −12…+14 → 20°…320°.
+  - Hover: `hsl(hue, 62%, 50%)` — same hue, vivid. Updated via JS inline style on `mousemove`.
+  - Selected home: `rgba(32,96,224,0.72)` (blue); selected away: `rgba(224,48,48,0.72)` (red).
+- **Interaction**: SVG hit-testing via `evt.target.closest('.tz-polygon')` — no manual raycasting.
+  - `onMapClick()` reads `dataset.tz` directly — no lon→offset lookup needed.
+  - `_hoveredPoly` tracks the current hover target; `_restorePolyColor()` returns it to correct state.
+- **Tooltip**: `<div id="map-tooltip">` absolutely positioned within `#map-container` (which has `position:relative`).
+  - Flips horizontal/vertical if near container edges.
+  - Shows timezone name (with `/` separators) + formatted UTC offset.
+- On `initMapMode()`: browser TZ auto-detected and pre-set as home; phase starts at `'away'`.
+- "Change Home" button resets phase to `'home'` for reselection.
+- `refreshPins()` = public alias for `applyHighlights()` (backward-compatible with any external callers).
+- Graticule: `d3.geoGraticule().step([15,15])` for subtle curved 15° grid lines (drawn below polygons).
 - Note: `d3-geo@3` is ESM-only (no UMD) — must use full `d3@7` bundle.
 
 ## CSS Conventions
@@ -79,5 +90,6 @@ COLORS = { tz1Muted, tz1Strong, tz2Muted, tz2Strong, overlap, noOverlapTint }
 ## Patterns to Follow
 - Keep everything in the three main files — avoid new files unless there's a clear module boundary.
 - New rendering features go in `app.js`; map-specific code stays in `map.js`.
-- CDN deps in use: `d3@7` (UMD) + `topojson-client@3` + `world-atlas@2` (JSON fetch). App requires internet for map; form/dropdown mode is self-contained.
+- CDN deps in use: `d3@7` (UMD) + `topojson-client@3`. Local data: `timezone-map.json` (216 KB TopoJSON). Form/dropdown mode is fully self-contained (no CDN needed).
+- `timezone-map.json` is NOT in git (large binary-ish file); regenerate with: `npx mapshaper combined-now.json -simplify 1% keep-shapes -o format=topojson timezone-map.json` from the timezone-boundary-builder 2025c release zip.
 - Use `Intl` APIs for all timezone/date work rather than manual tables.

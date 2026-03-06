@@ -1,65 +1,28 @@
 'use strict';
 
 // ══════════════════════════════════════════════════════════════════════════════
-//  World-map timezone picker
-//  Loaded after app.js — uses getUTCOffsetMinutes() and calculate() from app.js
-//  Uses d3-geo (global `d3`) and topojson-client (global `topojson`) from CDN.
+//  World-map timezone picker — timezone-boundary-builder edition
+//  Data: timezone-map.json (local TopoJSON simplified from 2025c release data)
+//  One SVG <path data-tz="…"> per timezone polygon; hover intensifies colour
+//  and shows a tooltip; click selects the timezone.
+//  Loaded after app.js — uses getUTCOffsetMinutes() and calculate() from there.
 // ══════════════════════════════════════════════════════════════════════════════
 
 const MAP_W = 900;
 const MAP_H = 450;
 
-// ── Canonical timezone per UTC-offset ─────────────────────────────────────────
-// Key = offset in minutes. Used to snap map clicks to well-known city timezones.
-const CANONICAL_TZ = new Map([
-  [-720, 'Pacific/Midway'],
-  [-660, 'Pacific/Niue'],
-  [-600, 'Pacific/Honolulu'],
-  [-570, 'Pacific/Marquesas'],
-  [-540, 'America/Anchorage'],
-  [-480, 'America/Los_Angeles'],
-  [-420, 'America/Denver'],
-  [-360, 'America/Chicago'],
-  [-300, 'America/New_York'],
-  [-270, 'America/Caracas'],
-  [-240, 'America/Halifax'],
-  [-210, 'America/St_Johns'],
-  [-180, 'America/Sao_Paulo'],
-  [-120, 'America/Noronha'],
-  [ -60, 'Atlantic/Azores'],
-  [   0, 'Europe/London'],
-  [  60, 'Europe/Paris'],
-  [ 120, 'Europe/Helsinki'],
-  [ 180, 'Europe/Moscow'],
-  [ 210, 'Asia/Tehran'],
-  [ 240, 'Asia/Dubai'],
-  [ 270, 'Asia/Kabul'],
-  [ 300, 'Asia/Karachi'],
-  [ 330, 'Asia/Kolkata'],
-  [ 345, 'Asia/Kathmandu'],
-  [ 360, 'Asia/Dhaka'],
-  [ 390, 'Asia/Yangon'],
-  [ 420, 'Asia/Bangkok'],
-  [ 480, 'Asia/Singapore'],
-  [ 540, 'Asia/Tokyo'],
-  [ 570, 'Australia/Adelaide'],
-  [ 600, 'Australia/Sydney'],
-  [ 660, 'Pacific/Noumea'],
-  [ 720, 'Pacific/Auckland'],
-  [ 780, 'Pacific/Apia'],
-]);
-
 // ── D3 projection (Natural Earth) ─────────────────────────────────────────────
-// Initialised once; reused for all coordinate conversions and path drawing.
+// Rotated -15° so 15°E is centred: UTC-11 sits at the left edge, UTC+13 right.
+
 let _projection = null;
 let _path       = null;
 
 function getProjection() {
   if (_projection) return _projection;
   _projection = d3.geoNaturalEarth1()
-    .rotate([-15, 0])   // centre at 15°E → UTC-11 at left edge, UTC+13 at right
+    .rotate([-15, 0])
     .fitExtent([[0, 0], [MAP_W, MAP_H]], { type: 'Sphere' });
-  _path = d3.geoPath(_projection);
+  _path = d3.geoPath(_projection).digits(0); // integer coords → compact SVG
   return _projection;
 }
 
@@ -68,68 +31,37 @@ function getPath() {
   return _path;
 }
 
-// ── Coordinate helpers ────────────────────────────────────────────────────────
+// ── Timezone colour helpers ───────────────────────────────────────────────────
+// UTC offset −12 … +14 is mapped to hue 20°…320° (300° arc, no full loop).
+// Pale = very low saturation; hover = vivid but not harsh.
 
-function clientToSVGPoint(evt, svgEl) {
-  const r = svgEl.getBoundingClientRect();
-  return [
-    (evt.clientX - r.left) * (MAP_W / r.width),
-    (evt.clientY - r.top)  * (MAP_H / r.height),
-  ];
+function tzOffsetHue(tz) {
+  const m = getUTCOffsetMinutes(tz);
+  const t = ((m / 60) + 12) / 26;          // normalise −12..+14 → 0..1
+  return Math.round(20 + t * 300);          // hue 20 (amber) … 320 (violet)
 }
 
-// Longitude of SVG x-coordinate via projection inverse (handles curved meridians).
-function svgPointToLon(pt) {
-  const proj = getProjection();
-  const geo  = proj.invert(pt);
-  return geo ? geo[0] : null;
+function tzColorPale(tz) {
+  return `hsl(${tzOffsetHue(tz)},22%,88%)`;
 }
 
-// ── Timezone lookup ───────────────────────────────────────────────────────────
-let _tzCache = null;
-
-function buildTZCache() {
-  if (_tzCache) return _tzCache;
-  _tzCache = new Map();
-  for (const tz of Intl.supportedValuesOf('timeZone')) {
-    const mins = getUTCOffsetMinutes(tz);
-    if (!_tzCache.has(mins) || CANONICAL_TZ.get(mins) === tz) {
-      _tzCache.set(mins, tz);
-    }
-  }
-  return _tzCache;
+function tzColorHover(tz) {
+  return `hsl(${tzOffsetHue(tz)},62%,50%)`;
 }
 
-function lonToOffsetMins(lon) {
-  return Math.round((lon / 15) * 4) / 4 * 60;
-}
-
-function findTimezoneForLon(lon) {
-  const target = lonToOffsetMins(lon);
-  if (CANONICAL_TZ.has(target)) return CANONICAL_TZ.get(target);
-  const cache = buildTZCache();
-  let best = 'UTC', bestDelta = Infinity;
-  for (const [mins, tz] of cache) {
-    const d = Math.abs(mins - target);
-    if (d < bestDelta) { bestDelta = d; best = tz; }
-  }
-  return best;
-}
+// ── UTC offset label ──────────────────────────────────────────────────────────
 
 function fmtOffset(tz) {
   const m = getUTCOffsetMinutes(tz);
   const s = m >= 0 ? '+' : '-';
   const a = Math.abs(m);
-  const h = Math.floor(a / 60);
-  const n = a % 60;
-  return `UTC${s}${h}${n ? ':' + String(n).padStart(2, '0') : ''}`;
+  return `UTC${s}${Math.floor(a / 60)}${a % 60 ? ':' + String(a % 60).padStart(2, '0') : ''}`;
 }
 
-// ── SVG construction ──────────────────────────────────────────────────────────
+// ── SVG skeleton ──────────────────────────────────────────────────────────────
 
 function createMapSVG() {
-  const proj = getProjection();
-  const graticule = d3.geoGraticule().step([15, 15])();
+  const graticule  = d3.geoGraticule().step([15, 15])();
   const sphere     = { type: 'Sphere' };
   const gratPath   = getPath()(graticule) || '';
   const spherePath = getPath()(sphere)    || '';
@@ -140,83 +72,102 @@ function createMapSVG() {
   xmlns="http://www.w3.org/2000/svg"
   role="img"
   aria-label="World map for timezone selection"
-  style="width:100%;height:auto;display:block;cursor:crosshair;border-radius:6px;">
-  <path class="map-sphere" d="${spherePath}"/>
-  <path class="map-graticule" d="${gratPath}"/>
-  <g id="map-land"    aria-hidden="true"></g>
-  <g id="map-borders" aria-hidden="true"></g>
-  <g id="map-pins"    aria-hidden="true"></g>
-  <path id="map-hover-line" class="map-hover-line" d="" opacity="0"/>
+  style="width:100%;height:auto;display:block;border-radius:6px;cursor:default;">
+  <path class="map-sphere"         d="${spherePath}"/>
+  <path class="map-graticule"      d="${gratPath}"/>
+  <g    id="tz-polygons"           aria-hidden="true"></g>
   <path class="map-sphere-outline" d="${spherePath}"/>
-  <rect width="${MAP_W}" height="${MAP_H}" fill="transparent" id="map-overlay"/>
 </svg>`;
 }
 
-// Async: fetch world-atlas TopoJSON and paint countries + borders into the SVG.
-async function loadAndRenderCountries() {
-  const url = 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json';
+// ── Load and render timezone polygons ─────────────────────────────────────────
+// Fetches timezone-map.json (216 KB TopoJSON), renders a <path> per feature,
+// then reapplies any selection highlights already in mapState.
+
+async function loadAndRenderTimezones() {
   let topo;
   try {
-    const res = await fetch(url);
+    const res = await fetch('timezone-map.json');
     topo = await res.json();
   } catch (e) {
-    console.warn('TimeZoneCheck: could not load world-atlas:', e);
+    console.warn('TimeZoneCheck: could not load timezone-map.json:', e);
     return;
   }
 
-  const land    = topojson.feature(topo, topo.objects.land);
-  const borders = topojson.mesh(topo, topo.objects.countries, (a, b) => a !== b);
+  // Mapshaper names the object after the source file — grab first key safely
+  const objKey       = Object.keys(topo.objects)[0];
+  const { features } = topojson.feature(topo, topo.objects[objKey]);
+  const p            = getPath();
 
-  const landEl    = document.getElementById('map-land');
-  const bordersEl = document.getElementById('map-borders');
-  if (!landEl || !bordersEl) return;
+  const parts = features.map(f => {
+    const tzid = f.properties && f.properties.tzid;
+    if (!tzid) return '';
+    const d = p(f);
+    if (!d) return '';
+    return `<path class="tz-polygon" data-tz="${tzid}" d="${d}" style="fill:${tzColorPale(tzid)}"/>`;
+  });
 
-  const p = getPath();
-  landEl.innerHTML    = `<path class="map-land" d="${p(land) || ''}"/>`;
-  bordersEl.innerHTML = `<path class="map-borders" d="${p(borders) || ''}"/>`;
-}
-
-// ── Pin rendering ─────────────────────────────────────────────────────────────
-
-function pinSVG(tz, cls, label) {
-  const offsetMins = getUTCOffsetMinutes(tz);
-  const approxLon  = (offsetMins / 60) * 15;
-  const proj       = getProjection();
-  const [px, py]   = proj([approxLon, 35]) || [MAP_W / 2, MAP_H / 2];
-  const cx = Math.max(14, Math.min(MAP_W - 14, px));
-  const cy = Math.max(14, Math.min(MAP_H - 25, py));
-  const stemY2 = Math.min(cy + 48, MAP_H - 4);
-
-  return `<g class="map-pin ${cls}">
-    <line x1="${cx.toFixed(1)}" y1="${(cy + 9).toFixed(1)}"
-          x2="${cx.toFixed(1)}" y2="${stemY2.toFixed(1)}" class="pin-stem"/>
-    <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="9" class="pin-dot"/>
-    <text x="${cx.toFixed(1)}" y="${(Math.max(10, cy - 14)).toFixed(1)}"
-          class="pin-label">${label}</text>
-  </g>`;
-}
-
-function refreshPins() {
-  const el = document.getElementById('map-pins');
-  if (!el) return;
-  el.innerHTML = '';
-  if (window.mapState.homeTZ)
-    el.insertAdjacentHTML('beforeend', pinSVG(window.mapState.homeTZ, 'pin-home', 'Home'));
-  if (window.mapState.awayTZ)
-    el.insertAdjacentHTML('beforeend', pinSVG(window.mapState.awayTZ, 'pin-away', 'Away'));
-}
-
-// ── Hover meridian ────────────────────────────────────────────────────────────
-// Draw a curved meridian at the hovered longitude using the D3 path generator.
-function meridianPath(lon) {
-  const line = { type: 'LineString', coordinates: [] };
-  for (let lat = 90; lat >= -90; lat -= 2) {
-    line.coordinates.push([lon, lat]);
+  const el = document.getElementById('tz-polygons');
+  if (el) {
+    el.innerHTML = parts.join('');
+    applyHighlights();   // paint home/away TZ if already set
   }
-  return getPath()(line) || '';
 }
 
-// ── State & UI helpers ────────────────────────────────────────────────────────
+// ── Selection highlights ──────────────────────────────────────────────────────
+// Walks every .tz-polygon and paints home (blue) / away (red) / pale (neutral).
+// Safe to call before polygons exist — querySelectorAll returns empty list.
+
+function applyHighlights() {
+  const { homeTZ, awayTZ } = window.mapState || {};
+  document.querySelectorAll('.tz-polygon').forEach(el => {
+    const tz = el.dataset.tz;
+    if (tz === homeTZ) {
+      el.style.fill = 'rgba(32,96,224,0.72)';
+    } else if (tz === awayTZ) {
+      el.style.fill = 'rgba(224,48,48,0.72)';
+    } else if (el !== _hoveredPoly) {
+      el.style.fill = tzColorPale(tz);
+    }
+  });
+}
+
+// Public alias kept for compatibility with any external callers.
+function refreshPins() { applyHighlights(); }
+
+// ── Tooltip ───────────────────────────────────────────────────────────────────
+
+function showTooltip(evt, tz) {
+  const tt = document.getElementById('map-tooltip');
+  if (!tt) return;
+
+  const cRect = document.getElementById('map-container').getBoundingClientRect();
+  tt.innerHTML =
+    `<strong>${tz.replace(/_/g, '\u200b').replace(/\//g, ' / ')}</strong>` +
+    `<span>${fmtOffset(tz)}</span>`;
+  tt.classList.add('visible');
+
+  // Prefer above-right of cursor; flip if near edges
+  const tw = tt.offsetWidth  || 170;
+  const th = tt.offsetHeight || 46;
+  const mg = 14;
+
+  let left = evt.clientX - cRect.left + mg;
+  let top  = evt.clientY - cRect.top  - th - mg;
+
+  if (left + tw > cRect.width  - 8) left = evt.clientX - cRect.left - tw - mg;
+  if (top < 6)                        top  = evt.clientY - cRect.top  + mg;
+
+  tt.style.left = `${left}px`;
+  tt.style.top  = `${top}px`;
+}
+
+function hideTooltip() {
+  const tt = document.getElementById('map-tooltip');
+  if (tt) tt.classList.remove('visible');
+}
+
+// ── State helpers ─────────────────────────────────────────────────────────────
 
 window.mapState = { phase: 'home', homeTZ: null, awayTZ: null };
 
@@ -233,125 +184,98 @@ function updateTZTag(id, tz) {
     : 'Click map to select';
 }
 
-function updatePrompt() {
-  const el = document.getElementById('map-prompt');
-  if (!el) return;
-  const { phase, homeTZ, awayTZ } = window.mapState;
-  if (phase === 'home') {
-    el.className   = 'map-prompt map-prompt-home';
-    el.textContent = 'Click your home timezone on the map';
-  } else if (!awayTZ) {
-    el.className   = 'map-prompt map-prompt-away';
-    el.textContent =
-      `Home: ${homeTZ.replace(/_/g, ' ')} (${fmtOffset(homeTZ)})` +
-      ' \u2014 click the away timezone';
-  } else {
-    el.className   = 'map-prompt map-prompt-away';
-    el.textContent =
-      `Home: ${homeTZ.replace(/_/g, ' ')} (${fmtOffset(homeTZ)})` +
-      ` \u2014 Away: ${awayTZ.replace(/_/g, ' ')} (${fmtOffset(awayTZ)})` +
-      ' \u2014 click map to change away';
-  }
+// ── Hover / click handlers ────────────────────────────────────────────────────
+
+let _hoveredPoly = null;
+
+// Restores a polygon to its correct colour (selected or pale).
+function _restorePolyColor(el) {
+  const tz = el.dataset.tz;
+  const { homeTZ, awayTZ } = window.mapState || {};
+  if      (tz === homeTZ) el.style.fill = 'rgba(32,96,224,0.72)';
+  else if (tz === awayTZ) el.style.fill = 'rgba(224,48,48,0.72)';
+  else                    el.style.fill = tzColorPale(tz);
 }
 
-// ── Event handlers ────────────────────────────────────────────────────────────
-
 function onMapClick(evt) {
-  const svg = document.getElementById('world-map-svg');
-  const pt  = clientToSVGPoint(evt, svg);
-  const lon = svgPointToLon(pt);
-  if (lon === null) return;           // click outside sphere
-  const tz = findTimezoneForLon(lon);
+  const target = evt.target.closest('.tz-polygon');
+  if (!target) return;
+  const tz = target.dataset.tz;
+  if (!tz) return;
 
   if (window.mapState.phase === 'home') {
     window.mapState.homeTZ = tz;
     window.mapState.phase  = 'away';
     syncDropdown('tz1', tz);
     updateTZTag('tz1-tag', tz);
-    refreshPins();
+    applyHighlights();
   } else {
     window.mapState.awayTZ = tz;
     syncDropdown('tz2', tz);
     updateTZTag('tz2-tag', tz);
-    refreshPins();
+    applyHighlights();
     calculate();
   }
 }
 
 function onMapHover(evt) {
-  const svg = document.getElementById('world-map-svg');
-  const pt  = clientToSVGPoint(evt, svg);
-  const lon = svgPointToLon(pt);
+  const newTarget = evt.target.closest('.tz-polygon');
 
-  if (lon === null) {
-    onMapLeave();
-    return;
+  if (newTarget !== _hoveredPoly) {
+    if (_hoveredPoly) _restorePolyColor(_hoveredPoly);
+    _hoveredPoly = newTarget;
+
+    if (newTarget) {
+      const tz = newTarget.dataset.tz;
+      const { homeTZ, awayTZ } = window.mapState || {};
+      if (tz !== homeTZ && tz !== awayTZ) {
+        newTarget.style.fill = tzColorHover(tz);
+      }
+    }
   }
 
-  const tz = findTimezoneForLon(lon);
-  const info = document.getElementById('map-tz-info');
-  if (info) info.textContent = `${tz.replace(/_/g, ' ')}  ${fmtOffset(tz)}`;
-
-  const line = document.getElementById('map-hover-line');
-  if (line) {
-    line.setAttribute('d', meridianPath(lon));
-    line.setAttribute('opacity', '1');
-  }
+  if (_hoveredPoly) showTooltip(evt, _hoveredPoly.dataset.tz);
+  else              hideTooltip();
 }
 
 function onMapLeave() {
-  const info = document.getElementById('map-tz-info');
-  if (info) info.textContent = '';
-  const line = document.getElementById('map-hover-line');
-  if (line) line.setAttribute('opacity', '0');
+  if (_hoveredPoly) { _restorePolyColor(_hoveredPoly); _hoveredPoly = null; }
+  hideTooltip();
 }
 
-// ── Public: initMapMode ───────────────────────────────────────────────────────
+// ── initMapMode ───────────────────────────────────────────────────────────────
 
 function initMapMode() {   // eslint-disable-line no-unused-vars
   const container = document.getElementById('map-container');
   if (!container) return;
 
-  // Auto-detect browser timezone and pre-set as home
   const browserTZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
-
-  // Reset state with home pre-filled
   window.mapState = { phase: 'away', homeTZ: browserTZ, awayTZ: null };
 
-  // Build inner HTML (sync — country paths filled in async below)
   container.innerHTML = `
     <div class="map-prompt-row">
       <button id="map-change-home" class="map-change-home-btn" type="button">Change Home</button>
     </div>
     ${createMapSVG()}
-    <div id="map-tz-info" class="map-tz-info" aria-live="polite"></div>
+    <div id="map-tooltip" class="map-tooltip" role="tooltip"></div>
   `;
 
-  // Sync home TZ to dropdown, tag, and pin
   syncDropdown('tz1', browserTZ);
   updateTZTag('tz1-tag', browserTZ);
   updateTZTag('tz2-tag', null);
-  refreshPins();
 
   document.getElementById('map-change-home').addEventListener('click', () => {
-    window.mapState.phase  = 'home';
-    window.mapState.homeTZ = null;
-    window.mapState.awayTZ = null;
+    if (_hoveredPoly) { _restorePolyColor(_hoveredPoly); _hoveredPoly = null; }
+    hideTooltip();
+    window.mapState = { phase: 'home', homeTZ: null, awayTZ: null };
     updateTZTag('tz1-tag', null);
     updateTZTag('tz2-tag', null);
-    refreshPins();
+    applyHighlights();
     document.getElementById('results').classList.add('hidden');
   });
 
-  // Load country shapes (async — does not block map interactivity)
-  loadAndRenderCountries();
-
-  // Pre-warm TZ cache during idle time
-  if (typeof requestIdleCallback === 'function') {
-    requestIdleCallback(buildTZCache);
-  } else {
-    setTimeout(buildTZCache, 100);
-  }
+  // Async — does not block SVG interactivity
+  loadAndRenderTimezones();
 
   const svg = document.getElementById('world-map-svg');
   svg.addEventListener('click',      onMapClick);
